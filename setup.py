@@ -5,9 +5,9 @@ def readme():
         return readme_file.read()
 
 configuration = {
-    'name' : 'umap-learn',
+    'name' : 'vmap-learn',
     'version': '0.3.10',
-    'description' : 'Uniform Manifold Approximation and Projection',
+    'description' : 'Variable Manifold Approximation and Projection',
     'long_description' : readme(),
     'classifiers' : [
         'Development Status :: 3 - Alpha',
@@ -25,15 +25,15 @@ configuration = {
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.6',
     ],
-    'keywords' : 'dimension reduction t-sne manifold',
-    'url' : 'http://github.com/lmcinnes/umap',
-    'maintainer' : 'Leland McInnes',
-    'maintainer_email' : 'leland.mcinnes@gmail.com',
+    'keywords' : 'dimension reduction t-sne umap manifold',
+    #'url' : 'http://github.com/lmcinnes/umap',
+    #'maintainer' : 'Leland McInnes',
+    #'maintainer_email' : 'leland.mcinnes@gmail.com',
     'license' : 'BSD',
-    'packages' : ['umap'],
+    'packages' : ['vmap'],
     'install_requires': ['numpy >= 1.13',
                          'scikit-learn >= 0.16',
-                          'scipy >= 0.19',
+                         'scipy >= 0.19',
                          'numba >= 0.37'],
     'ext_modules' : [],
     'cmdclass' : {},
