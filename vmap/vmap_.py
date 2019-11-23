@@ -805,7 +805,6 @@ def rdist(x, y):
     return result
 
 
-@numba.njit(fastmath=True, parallel=True)
 def optimize_layout(
     head_embedding,
     tail_embedding,
@@ -882,10 +881,6 @@ def optimize_layout(
         The optimized embedding.
     """
 
-    dim = head_embedding.shape[1]
-    move_other = (
-        head_embedding.shape[0] == tail_embedding.shape[0]
-    )
     alpha = initial_alpha
 
     epochs_per_negative_sample = (
@@ -898,93 +893,139 @@ def optimize_layout(
 
     for n in range(n_epochs):
         
-        for i in range(epochs_per_sample.shape[0]):
-            if epoch_of_next_sample[i] <= n:
-                j = head[i]
-                k = tail[i]
-
-                current = head_embedding[j]
-                other = tail_embedding[k]
-
-                dist_squared = rdist(current, other)
-
-                if dist_squared > 0.0:
-                    grad_coeff = (
-                        -2.0
-                        * a
-                        * b
-                        * pow(dist_squared, b - 1.0)
-                    )
-                    grad_coeff /= (
-                        a * pow(dist_squared, b) + 1.0
-                    )
-                else:
-                    grad_coeff = 0.0
-
-                for d in range(dim):
-                    grad_d = clip(
-                        grad_coeff * (current[d] - other[d])
-                    )
-                    
-                    current[d] += grad_d * alpha
-                        
-                    if move_other:
-                        other[d] += -grad_d * alpha
-
-                epoch_of_next_sample[
-                    i
-                ] += epochs_per_sample[i]
-
-                n_neg_samples = int(
-                    (n - epoch_of_next_negative_sample[i])
-                    / epochs_per_negative_sample[i]
-                )
-
-                for p in range(n_neg_samples):
-                    k = tau_rand_int(rng_state) % n_vertices
-
-                    other = tail_embedding[k]
-
-                    dist_squared = rdist(current, other)
-
-                    if dist_squared > 0.0:
-                        grad_coeff = 2.0 * gamma * b
-                        grad_coeff /= (
-                            0.001 + dist_squared
-                        ) * (a * pow(dist_squared, b) + 1)
-                    elif j == k:
-                        continue
-                    else:
-                        grad_coeff = 0.0
-
-                    for d in range(dim):
-                        if grad_coeff > 0.0:
-                            grad_d = clip(
-                                grad_coeff
-                                * (current[d] - other[d])
-                            )
-                        else:
-                            grad_d = 4.0
-                            
-                        # [MODIFIED] symmetric repulsion
-                        current[d] += 0.5 * grad_d * alpha
-                        other[d] += -0.5 * grad_d * alpha
-
-                epoch_of_next_negative_sample[i] += (
-                    n_neg_samples
-                    * epochs_per_negative_sample[i]
-                )
-                
         alpha = initial_alpha * (
             1.0 - (float(n) / float(n_epochs))
         )
 
+        optimize_step(
+            head_embedding,
+            tail_embedding,
+            head,
+            tail,
+            n_vertices,
+            epochs_per_sample,
+            a,
+            b,
+            rng_state,
+            gamma,
+            n,
+            alpha,
+            negative_sample_rate,
+            epochs_per_negative_sample,
+            epoch_of_next_negative_sample,
+            epoch_of_next_sample,
+        )
+        
         if verbose and n % int(n_epochs / 10) == 0:
             print(
                 "\tcompleted ", n, " / ", n_epochs, "epochs"
             )
-
+    
     return head_embedding
+
+        
+@numba.njit(fastmath=True, parallel=True)
+def optimize_step(
+    head_embedding,
+    tail_embedding,
+    head,
+    tail,
+    n_vertices,
+    epochs_per_sample,
+    a,
+    b,
+    rng_state,
+    gamma,
+    n,
+    alpha,
+    negative_sample_rate,
+    epochs_per_negative_sample,
+    epoch_of_next_negative_sample,
+    epoch_of_next_sample,
+):
+    dim = head_embedding.shape[1]
+    move_other = (
+        head_embedding.shape[0] == tail_embedding.shape[0]
+    )
+        
+    for i in range(epochs_per_sample.shape[0]):
+        if epoch_of_next_sample[i] > n: continue
+
+        j = head[i]
+        k = tail[i]
+
+        current = head_embedding[j]
+        other = tail_embedding[k]
+
+        dist_squared = rdist(current, other)
+
+        if dist_squared > 0.0:
+            grad_coeff = (
+                -2.0
+                * a
+                * b
+                * pow(dist_squared, b - 1.0)
+            )
+            grad_coeff /= (
+                a * pow(dist_squared, b) + 1.0
+            )
+        else:
+            grad_coeff = 0.0
+
+        for d in range(dim):
+            grad_d = clip(
+                grad_coeff * (current[d] - other[d])
+            )
+                    
+            current[d] += grad_d * alpha
+            if move_other:
+                other[d] -= grad_d * alpha
+
+        epoch_of_next_sample[i] += epochs_per_sample[i]
+
+        n_neg_samples = int(
+            (n - epoch_of_next_negative_sample[i])
+            / epochs_per_negative_sample[i]
+        )
+
+        for p in range(n_neg_samples):
+            k = tau_rand_int(rng_state) % n_vertices
+
+            other = tail_embedding[k]
+
+            dist_squared = rdist(current, other)
+
+            if dist_squared > 0.0:
+                grad_coeff = 2.0 * gamma * b
+                grad_coeff /= (
+                    0.001 + dist_squared
+                ) * (a * pow(dist_squared, b) + 1)
+            elif j == k:
+                continue
+            else:
+                grad_coeff = 0.0
+
+            for d in range(dim):
+                if grad_coeff > 0.0:
+                    grad_d = clip(
+                        grad_coeff
+                        * (current[d] - other[d])
+                    )
+                else:
+                    grad_d = 4.0
+                            
+                # [MODIFIED] symmetric repulsion
+                if move_other:
+                    current[d] += 0.5 * grad_d * alpha
+                    other[d] -= 0.5 * grad_d * alpha
+                else:
+                    current[d] += grad_d * alpha
+
+        epoch_of_next_negative_sample[i] += (
+            n_neg_samples
+            * epochs_per_negative_sample[i]
+        )
+
 
 def simplicial_set_embedding(
     data,
