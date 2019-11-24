@@ -443,6 +443,8 @@ def fuzzy_simplicial_set(
     angular=False,
     set_op_mix_ratio=1.0,
     local_connectivity=1.0,
+    sigmas=None,
+    rhos=None,
     verbose=False,
 ):
     """Given a set of data X, a neighborhood size, and a measure of distance
@@ -559,11 +561,12 @@ def fuzzy_simplicial_set(
             verbose=verbose,
         )
 
-    sigmas, rhos = smooth_knn_dist(
-        knn_dists,
-        n_neighbors,
-        local_connectivity=local_connectivity,
-    )
+    if sigmas is None or rhos is None:
+        sigmas, rhos = smooth_knn_dist(
+            knn_dists,
+            n_neighbors,
+            local_connectivity=local_connectivity,
+        )
 
     rows, cols, vals = compute_membership_strengths(
         knn_indices, knn_dists, sigmas, rhos
@@ -586,7 +589,7 @@ def fuzzy_simplicial_set(
 
     result.eliminate_zeros()
 
-    return result
+    return result, sigmas, rhos
 
 
 @numba.njit()
@@ -1451,6 +1454,8 @@ class VMAP(BaseEstimator):
         target_metric_kwds=None,
         target_weight=0.5,
         transform_seed=42,
+        sigmas=None,
+        rhos=None,
         verbose=False,
     ):
 
@@ -1477,6 +1482,9 @@ class VMAP(BaseEstimator):
         self.target_weight = target_weight
         self.transform_seed = transform_seed
                 
+        self.sigmas = sigmas
+        self.rhos = rhos
+            
         self.verbose = verbose
 
         self.a = a
@@ -1658,7 +1666,7 @@ class VMAP(BaseEstimator):
             dmat = pairwise_distances(
                 X, metric=self.metric, **self._metric_kwds
             )
-            self.graph_ = fuzzy_simplicial_set(
+            self.graph_, self.sigmas, self.rhos = fuzzy_simplicial_set(
                 dmat,
                 self._n_neighbors,
                 random_state,
@@ -1669,6 +1677,8 @@ class VMAP(BaseEstimator):
                 self.angular_rp_forest,
                 self.set_op_mix_ratio,
                 self.local_connectivity,
+                self.sigmas,
+                self.rhos,
                 self.verbose,
             )
         else:
@@ -1688,7 +1698,7 @@ class VMAP(BaseEstimator):
                 self.verbose,
             )
 
-            self.graph_ = fuzzy_simplicial_set(
+            self.graph_, self.sigmas, self.rhos = fuzzy_simplicial_set(
                 X,
                 self.n_neighbors,
                 random_state,
@@ -1699,6 +1709,8 @@ class VMAP(BaseEstimator):
                 self.angular_rp_forest,
                 self.set_op_mix_ratio,
                 self.local_connectivity,
+                self.sigmas,
+                self.rhos,
                 self.verbose,
             )
 
@@ -1774,7 +1786,7 @@ class VMAP(BaseEstimator):
                         metric=self.target_metric,
                         **self._target_metric_kwds
                     )
-                    target_graph = fuzzy_simplicial_set(
+                    target_graph, self.sigmas, self.rhos = fuzzy_simplicial_set(
                         ydmat,
                         target_n_neighbors,
                         random_state,
@@ -1785,11 +1797,13 @@ class VMAP(BaseEstimator):
                         False,
                         1.0,
                         1.0,
+                        self.sigmas,
+                        self.rhos,
                         False,
                     )
                 else:
                     # Standard case
-                    target_graph = fuzzy_simplicial_set(
+                    target_graph, self.sigmas, self.rhos = fuzzy_simplicial_set(
                         y_[np.newaxis, :].T,
                         target_n_neighbors,
                         random_state,
@@ -1800,6 +1814,8 @@ class VMAP(BaseEstimator):
                         False,
                         1.0,
                         1.0,
+                        self.sigmas,
+                        self.rhos,
                         False,
                     )
                 # product = self.graph_.multiply(target_graph)
